@@ -4,6 +4,7 @@ import re
 from funcy import partial, cat, ikeep, project, imapcat, any
 
 from ..asttools import ast_eval, is_name
+from ..analysis import get_import_module
 from . import register_global_usage
 
 
@@ -118,6 +119,7 @@ def _parse_patterns(files, call_node):
         refs = ['%s.%s' % (views_module, v) for v in refs]
     return refs
 
+
 def _parse_urlrec(node):
     if isinstance(node, ast.Call) and len(node.args) >= 2:
         return node.args[1]
@@ -129,7 +131,20 @@ def _mark_refs(files, used, refs):
     for ref in refs:
         module, func = ref.rsplit('.', 1)
         if module in files:
-            used[module].add(func)
+            pyfile = files[module]
+            if func in pyfile.scope.names:
+                used[module].add(func)
+            else:
+                # Try to find func in imports
+                for imp in pyfile.scope.imports:
+                    imported_module = get_import_module(imp, pyfile, files)
+                    ref = "%s.%s" % (imported_module, func)
+                    names = [node.asname or node.name for node in imp.names]
+                    if func in names:
+                        used[module].add(func)
+                        _mark_refs(files, used, [ref])
+                    elif '*' in names:
+                        _mark_refs(files, used, [ref])
 
 
 def get_name_val(node):
@@ -144,6 +159,7 @@ def get_name_val(node):
 def is_store(node):
     return isinstance(node, ast.Name) \
             and isinstance(node.ctx, ast.Store)
+
 
 def is_def(node):
     return isinstance(node, (ast.FunctionDef, ast.ClassDef))

@@ -33,8 +33,12 @@ def global_usage(files):
 
                     # Mark all imported things as used
                     if module in files:
+                        imported_pyfile = files[module]
                         names = {alias.name for alias in node.names}
-                        used[module].update(names)
+
+                        for name in names:
+                            find_usage_in_pyfile(
+                                name, module, imported_pyfile, used, files)
 
                         # Handle star imports
                         if '*' in names:
@@ -91,6 +95,19 @@ def global_usage(files):
             if name not in used[package] and name not in IGNORED_VARS:
                 print '%s:%d: %s %s is never used (globally)' % \
                       (pyfile.filename, nodes[0].lineno, name_class(nodes[0]), name)
+
+
+def find_usage_in_pyfile(name, module, pyfile, used, files):
+    if name in pyfile.scope.names:
+        used[module].add(name)
+    else:
+        for imp in pyfile.scope.imports:
+            if isinstance(imp, ast.Import):
+                continue
+            module = get_import_module(imp, pyfile, files)
+            if module in files:
+                imported_pyfile = files[module]
+                find_usage_in_pyfile(name, module, imported_pyfile, used, files)
 
 
 def find_attr(expr, node):
