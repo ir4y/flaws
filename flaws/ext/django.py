@@ -129,22 +129,30 @@ def _parse_urlrec(node):
 
 def _mark_refs(files, used, refs):
     for ref in refs:
-        module, func = ref.rsplit('.', 1)
-        if module in files:
-            pyfile = files[module]
-            if func in pyfile.scope.names:
-                used[module].add(func)
-            else:
-                # Try to find func in imports
-                for imp in pyfile.scope.imports:
-                    imported_module = get_import_module(imp, pyfile, files)
-                    ref = "%s.%s" % (imported_module, func)
-                    names = [node.asname or node.name for node in imp.names]
-                    if func in names:
-                        used[module].add(func)
-                        _mark_refs(files, used, [ref])
-                    elif '*' in names:
-                        _mark_refs(files, used, [ref])
+        if not _mark_ref(files, used, ref):
+            print "Can't resolve name '%s'" % ref
+
+
+def _mark_ref(files, used, ref):
+    module, func = ref.rsplit('.', 1)
+    if module in files:
+        pyfile = files[module]
+        if func in pyfile.scope.names:
+            used[module].add(func)
+            return True
+        else:
+            # Try to find func in imports
+            for imp in (imp for imp in pyfile.scope.imports
+                        if isinstance(imp, ast.ImportFrom)):
+                imported_module = get_import_module(imp, pyfile, files)
+                ref = "%s.%s" % (imported_module, func)
+                for node in imp.names:
+                    if func == node.asname:
+                        ref = "%s.%s" % (imported_module, node.name)
+                        return _mark_ref(files, used, ref)
+                    elif func == node.name or '*' == node.name:
+                        return _mark_ref(files, used, ref)
+    return False
 
 
 def get_name_val(node):
